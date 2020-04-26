@@ -1,0 +1,335 @@
+# **QUE POKEMONES SON LOS MAS VIABLES COMPETITIVAMENTE?**
+
+**importamos los CSV para trabajar y asignamos los INDEX correctos**
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+pokemon_stats=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Pokemon Trabajo Final/pokemon_data.csv")
+pokemon_debilidad=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Pokemon Trabajo Final/pokemon_weaknessAllGen.csv")
+pokemon_debilidad=pokemon_debilidad.drop(["Name.1"], axis=1)
+
+print(pokemon_stats)
+print(pokemon_debilidad)
+
+**Creamos columna debilidades y resistencias totales**
+
+pokemon_debilidad["Total Debilidades"] = (pokemon_debilidad[["Grass","Fire","Water","Bug","Normal","Poison","Electric","Ground","Fairy","Fighting","Psychic","Rock","Ghost","Ice","Dragon","Dark","Steel","Flying"]] > 1).sum(1)
+pokemon_debilidad["Total Resistencias"] = (pokemon_debilidad[["Grass","Fire","Water","Bug","Normal","Poison","Electric","Ground","Fairy","Fighting","Psychic","Rock","Ghost","Ice","Dragon","Dark","Steel","Flying"]] < 1).sum(1)
+
+print(pokemon_debilidad)
+
+**Unimos ambos Dataframes y creamos columna "Total Stats"**
+
+pokemon_final=pd.merge(pokemon_stats,pokemon_debilidad, on="Name")
+pokemon_final["Total Stats"]=pokemon_final[["HP","Attack","Defense","Sp. Atk","Sp. Def","Speed"]].sum(axis=1)
+pokecols= list(pokemon_final.columns)
+pokemon_final= pokemon_final[pokecols[0:9] + [pokecols[-1]] + pokecols[9:32]]
+pokemon_final.head()
+
+**Eliminamos pokemon Legendarios y pokemon MEGA** (ya que no son aceptados competitivamente)
+
+
+pokemon_final=pokemon_final.loc[~pokemon_final["Legendary"]== True]
+
+print(pokemon_final)
+
+pokemon_final=pokemon_final.loc[~pokemon_final["Name"].str.contains("Mega")]
+
+print(pokemon_final)
+
+**Importamos Dataframe de combate** *(posee 3 columnas donde se muestra el ID del pokemon y quien ganó)*
+
+pokemon_combate=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Pokemon Trabajo Final/combats.csv")
+
+print(pokemon_combate)
+
+**Para definir nuestra variable dependiente, usamos el DF recien importado y definimos que si ganó mas del 85% de las peleas en las que participó, es viable competitivamente.**
+
+*armamos el dataframe de los combates peleados.*
+
+pokemon_combate_peleadas1=pd.DataFrame(pokemon_combate["First_pokemon"].value_counts())
+pokemon_combate_peleadas1=pokemon_combate_peleadas1.reset_index()
+pokemon_combate_peleadas1=pokemon_combate_peleadas1.rename(columns={"index":"#","First_pokemon":"Cuantas Peleo Col1"})
+pokemon_combate_peleadas1
+
+pokemon_combate_peleadas2=pd.DataFrame(pokemon_combate["Second_pokemon"].value_counts())
+pokemon_combate_peleadas2=pokemon_combate_peleadas2.reset_index()
+pokemon_combate_peleadas2=pokemon_combate_peleadas2.rename(columns={"index":"#","Second_pokemon":"Cuantas Peleo Col2"})
+pokemon_combate_peleadas2
+
+pokemon_combate_totales=pd.merge(pokemon_combate_peleadas1,pokemon_combate_peleadas2, on="#")
+pokemon_combate_totales
+
+pokemon_combate_totales["Peleas Totales"]=pokemon_combate_totales["Cuantas Peleo Col1"] + pokemon_combate_totales["Cuantas Peleo Col2"]
+pokemon_combate_totales
+
+*armamos el dataframe de los combates ganados*
+
+pokemon_combate_ganadas=pd.DataFrame(pokemon_combate["Winner"].value_counts())
+pokemon_combate_ganadas
+
+pokemon_combate_ganadas=pokemon_combate_ganadas.reset_index()
+pokemon_combate_ganadas=pokemon_combate_ganadas.rename(columns={"index":"#","Winner":"Cuantas Gano?"})
+pokemon_combate_ganadas
+
+**hacemos merge de DF de combates peleados y combates ganados.**
+
+pokemon_viable=pd.merge(pokemon_combate_totales,pokemon_combate_ganadas, on="#")
+pokemon_viable
+
+**Vemos si cada pokemon (representado en el "#") ganó mas de 85% de las peleas.**
+
+pokemon_viable["Porcentaje Victorias"]=pokemon_viable["Cuantas Gano?"] / pokemon_viable["Peleas Totales"]
+pokemon_viable
+
+pokemon_viable["Viable"]=np.where(pokemon_viable["Porcentaje Victorias"] >= 0.85,1,0)
+pokemon_viable
+
+**Hacemos Merge del Dataframe pokemon_final y pokemon_viable**
+
+pokemon_ultimate=pd.merge(pokemon_final,pokemon_viable, on="#")
+
+pokemon_ultimate.head(10)
+
+**Como se puede ver, existen muchos NaN en "Type 2". Esto se debe a que algunos pokemon no tienen segundo tipo. Los mismos los reemplazamos con "None" (osea no tiene).**
+
+pokemon_ultimate[pokemon_ultimate['Type 2'].isnull()]
+
+pokemon_ultimate["Type 2"].fillna("None", inplace=True)
+pokemon_ultimate.tail(10)
+
+**Revisamos que quede algun NaN dando vueltas**
+
+print(pokemon_ultimate.isna().sum())
+
+**Se puede ver que los pokemones que aun poseen NaN son aquellos que no tienen debilidades. Entonces reemplazamos NaN con "0".**
+
+pokemon_ultimate[pokemon_ultimate['Grass'].isnull()]
+
+pokemon_ultimate.fillna("1", inplace=True)
+pokemon_ultimate.tail(20)
+
+**Creamos dummys de los valores categoricos (Type 1 y Type 2).**
+
+pokemon_dummy_type1 = pd.get_dummies(pokemon_ultimate['Type 1'])
+pokemon_dummy_type1
+
+pokemon_dummy_type2 = pd.get_dummies(pokemon_ultimate['Type 2'])
+pokemon_dummy_type2.columns = ['Bug2', 'Dark2',"Dragon2","Electric2","Fairy2","Fighting2","Fire2","Flying2","Ghost2","Grass2","Ground2","Ice2","None2","Normal2","Poison2","Psychic2","Rock2","Steel2","Water2"]
+pokemon_dummy_type2
+
+pokemon_ultimate = pd.concat([pokemon_ultimate, pokemon_dummy_type1], axis=1)
+pokemon_ultimate = pd.concat([pokemon_ultimate, pokemon_dummy_type2], axis=1)
+
+**Eliminamos columnas que no vamos a usar**
+
+pokemon_ultimate
+
+pokemon_ultimate=pokemon_ultimate.set_index("#")
+
+pokemon_ultimate=pokemon_ultimate.drop(["Type 1","Name","Porcentaje Victorias","Peleas Totales","Cuantas Gano?","Type 2","Legendary","Generation","Cuantas Peleo Col1","Cuantas Peleo Col2"], axis=1)
+
+pokemon_ultimate
+
+**Vemos si existen Outliers y los eliminamos**
+
+***HP***
+
+boxplot1 = pokemon_ultimate.boxplot(column= "HP",grid=False, fontsize=15)
+boxplot1
+
+Q1, Q3 = np.percentile(pokemon_ultimate["HP"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((pokemon_ultimate['HP']> whis_sup).sum())
+print((pokemon_ultimate['HP']> whis_sup).sum()/pokemon_ultimate.shape[0])
+print((pokemon_ultimate['HP']< whis_inf).sum())
+print((pokemon_ultimate['HP']< whis_inf).sum()/pokemon_ultimate.shape[0])
+
+pokemon_definitivo=pokemon_ultimate.loc[(pokemon_ultimate["HP"] < 150) & (pokemon_ultimate["HP"] > 7)]
+pokemon_definitivo
+
+***ATTACK***
+
+boxplot2 = pokemon_definitivo.boxplot(column= "Attack",grid=False, fontsize=15)
+boxplot2
+
+Q1, Q3 = np.percentile(pokemon_definitivo["Attack"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((pokemon_definitivo['Attack']> whis_sup).sum())
+print((pokemon_definitivo['Attack']> whis_sup).sum()/pokemon_definitivo.shape[0])
+print((pokemon_definitivo['Attack']< whis_inf).sum())
+print((pokemon_definitivo['Attack']< whis_inf).sum()/pokemon_definitivo.shape[0])
+
+pokemon_definitivo=pokemon_definitivo.loc[pokemon_definitivo["Attack"] < 147]
+pokemon_definitivo
+
+***DEFENSE***
+
+boxplot3 = pokemon_definitivo.boxplot(column= "Defense",grid=False, fontsize=15)
+boxplot3
+
+Q1, Q3 = np.percentile(pokemon_definitivo["Defense"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((pokemon_definitivo['Defense']> whis_sup).sum())
+print((pokemon_definitivo['Defense']> whis_sup).sum()/pokemon_definitivo.shape[0])
+print((pokemon_definitivo['Defense']< whis_inf).sum())
+print((pokemon_definitivo['Defense']< whis_inf).sum()/pokemon_definitivo.shape[0])
+
+pokemon_definitivo=pokemon_definitivo.loc[pokemon_definitivo["Defense"] < 138]
+pokemon_definitivo
+
+***SP. ATK.***
+
+boxplot4 = pokemon_definitivo.boxplot(column= "Sp. Atk",grid=False, fontsize=15)
+boxplot4 #no hay outliers!
+
+***SP. DEF.***
+
+boxplot5 = pokemon_definitivo.boxplot(column= "Sp. Def",grid=False, fontsize=15)
+boxplot5
+
+Q1, Q3 = np.percentile(pokemon_definitivo["Sp. Def"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((pokemon_definitivo['Sp. Def']> whis_sup).sum())
+print((pokemon_definitivo['Sp. Def']> whis_sup).sum()/pokemon_definitivo.shape[0])
+print((pokemon_definitivo['Sp. Def']< whis_inf).sum())
+print((pokemon_definitivo['Sp. Def']< whis_inf).sum()/pokemon_definitivo.shape[0])
+
+pokemon_definitivo=pokemon_definitivo.loc[pokemon_definitivo["Sp. Def"] < 125]
+pokemon_definitivo
+
+***SPEED***
+
+boxplot6 = pokemon_definitivo.boxplot(column= "Speed",grid=False, fontsize=15)
+boxplot6
+
+Q1, Q3 = np.percentile(pokemon_definitivo["Speed"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((pokemon_definitivo['Speed']> whis_sup).sum())
+print((pokemon_definitivo['Speed']> whis_sup).sum()/pokemon_definitivo.shape[0])
+print((pokemon_definitivo['Speed']< whis_inf).sum())
+print((pokemon_definitivo['Speed']< whis_inf).sum()/pokemon_definitivo.shape[0])
+
+pokemon_definitivo=pokemon_definitivo.loc[pokemon_definitivo["Speed"] < 143]
+pokemon_definitivo
+
+# **BUSCAMOS EL MODELO MAS APROPIADO REALIZANDO CROSS VALIDATION**
+
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import train_test_split
+
+pokemon_definitivo
+
+**Seleccionamos Hiperparametros (Cross Validation)**
+
+parameter_grid_rf = {
+    'max_depth': [1,2,3,4,5],
+    'max_features': [0.3, 0.5, 1.],
+    'n_estimators': [5, 10, 15]}
+
+parameter_grid_dt = {
+    'max_depth': [1,2,3,4,5],
+    'min_samples_split': [1, 2, 3]}
+
+parameter_grid_logreg = {
+    'fit_intercept': [True, False]}
+
+
+grid_search_rf = GridSearchCV(RandomForestClassifier(), parameter_grid_rf,
+                            cv=10, verbose=3, refit=True, n_jobs=-1, scoring = "accuracy")
+
+grid_search_dt = GridSearchCV(DecisionTreeClassifier(), parameter_grid_dt,
+                            cv=10, verbose=3, refit=True, n_jobs=-1, scoring = "accuracy")
+
+grid_search_logreg = GridSearchCV(LogisticRegression(), parameter_grid_logreg,
+                            cv=10, verbose=3, refit=True, n_jobs=-1, scoring = "accuracy")
+
+**SEPARAMOS EL DF EN "Train" y "Test".**
+
+x=pokemon_definitivo.drop(["Viable"], axis=1)
+y=pokemon_definitivo["Viable"]
+
+***Random Forest***
+
+grid_search_rf.fit(x, y)
+
+grid_search_rf.best_estimator_
+
+grid_search_rf.best_params_
+
+grid_search_rf.best_score_
+
+***Decision Tree***
+
+grid_search_dt.fit(x, y)
+
+grid_search_dt.best_estimator_
+
+grid_search_dt.best_params_
+
+grid_search_dt.best_score_
+
+***Logistic Regression***
+
+grid_search_logreg.fit(x, y)
+
+grid_search_logreg.best_estimator_
+
+grid_search_logreg.best_params_
+
+grid_search_logreg.best_score_
+
+**Elegimos Decision Tree al tener Accuracy mas alto y entrenamos el modelo con los mejores parametros y luego lo testeamos.**
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=15)
+
+print(x_train.shape[0], x_test.shape[0])
+
+dtmod= DecisionTreeClassifier(max_depth=2, min_samples_split=2)
+dtmod.fit(x_train,y_train)
+
+dtmod.score(x_test,y_test)
+
+**Hacemos Matriz de Confusion.**
+
+from sklearn.metrics import confusion_matrix
+
+predicciones=dtmod.predict(x_test)
+confusion_matrix(y_test,predicciones)
