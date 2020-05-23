@@ -1,0 +1,62 @@
+import pandas as pd
+import numpy as np
+
+steam=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Steam COVID/steam covid.csv")
+gameid=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Steam COVID/steam game id.csv")
+gameid=gameid.rename(columns={"appid": "steamid"})
+
+print(steam)
+print(gameid)
+
+steam=steam.drop(columns=['owner_base', 'pre_average_price',"new_followers","sharing_percentage","covid_confirmed","owners_change"])
+
+steam
+
+steam.loc[steam["steamid"] == 377160]
+
+steamgames=pd.merge(steam,gameid, on="steamid")
+
+steamgames
+
+steamgames=steamgames.drop(steamgames.iloc[:,14:30], axis=1)
+
+steamgames
+
+steamgames=steamgames[["week","name","average_price","action","adventure","casual","puzzle","RPG","sports","simulation","strategy","peak_concurrent","average_playtime_x"]]
+steamgames=steamgames.rename(columns={"name": "game"})
+
+steamgames
+
+steamgames["month"]=np.where(steamgames["week"] <= 4,1,steamgames["week"])
+steamgames["month"]=np.where(steamgames["month"] >= 5,2,steamgames["month"])
+steamgames["month"]=np.where(steamgames["week"] >= 9,3,steamgames["month"])
+steamgames["month"]=np.where(steamgames["week"] >= 13,4,steamgames["month"])
+
+steamgames.head(20)
+
+steamgames1=steamgames.loc[steamgames["month"] == 1]
+steamgames2=steamgames.loc[steamgames["month"] == 2]
+steamgames3=steamgames.loc[steamgames["month"] == 3]
+steamgames4=steamgames.loc[steamgames["month"] == 4]
+
+print(steamgames1)
+print(steamgames2)
+print(steamgames3)
+print(steamgames4)
+
+steamgames1=steamgames1.groupby("game").apply(lambda steamgames1:steamgames1.iloc[steamgames1.peak_concurrent.argmax()])
+steamgames2=steamgames2.groupby("game").apply(lambda steamgames2:steamgames2.iloc[steamgames2.peak_concurrent.argmax()])
+steamgames3=steamgames3.groupby("game").apply(lambda steamgames3:steamgames3.iloc[steamgames3.peak_concurrent.argmax()])
+steamgames4=steamgames4.groupby("game").apply(lambda steamgames4:steamgames4.iloc[steamgames4.peak_concurrent.argmax()])
+
+steamgames1.head(30)
+
+steamgames1.index.name = "gamename"
+steamgames2.index.name = "gamename"
+steamgames3.index.name = "gamename"
+steamgames4.index.name = "gamename"
+
+steamfinal=pd.concat([steamgames1, steamgames2, steamgames3, steamgames4])
+steamfinal
+
+steamfinal.to_csv("steamcovid.csv")
