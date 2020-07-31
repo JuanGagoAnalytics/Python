@@ -1,0 +1,253 @@
+#IMPORAMOS DF DE DATOS DE JUEGOS DE STEAM
+
+import pandas as pd
+import numpy as np
+import io
+import matplotlib.pyplot as plt
+from google.colab import files
+uploaded=files.upload()
+
+steam=pd.read_csv(io.StringIO(uploaded['games.csv'].decode('utf-8')))
+steam=steam.drop(["Languages","Presence","Unnamed: 0","Platform","id","RawgID","SteamURL","Graphics","Storage","Memory","Soundtrack","Franchise","Achievements","Publisher","Description","Tags"], axis=1)
+steam
+
+#SEPARAMOS TEXTO DE VARIABLES, EN COLUMNAS DISTINTAS
+
+#Eliminamos los singos de "$" de la variable que queremos predecir "OriginalCost"
+
+steam["OriginalCost"]=steam.OriginalCost.astype(str).str.split('$').str[1].fillna(0)
+steam
+steam["OriginalCost"].value_counts()
+
+#creamos 2 variables de Genero: "Genero 1" y "Genero 2"
+
+steam["Genero 1"]=steam.Genres.astype(str).str.split(",").str[0].fillna("Not Defined")
+steam["Genero 2"]=steam.Genres.astype(str).str.split(",").str[1].fillna("Not Defined")
+steam=steam.drop("Genres", axis=1)
+steam
+
+#creamos 2 variables de cantidad de jugadores "Player tag 1" y "Player tag 2"
+
+steam["Player tag 1"]=steam.Players.astype(str).str.split(",").str[0].fillna("Not Defined")
+steam["Player tag 2"]=steam.Players.astype(str).str.split(",").str[1].fillna("Not Defined")
+steam=steam.drop("Players", axis=1)
+steam
+
+
+#BUSCAMOS LOS "NAN" Y LOS REEMPLAZAMOS
+
+steam2=steam
+steam2.isna().sum()
+
+#eliminamos las variables donde predominan los "NAN"
+
+steam2=steam2.drop(["Metacritic","DiscountedCost","ESRB"], axis=1)
+steam2
+
+#Reemplazamos los "NaN" de la variable "Controller" e "Indie" por "0" (representando que no tienen controller support) y "1" (representando que son indie)
+
+steam2["Controller"]=steam2["Controller"].fillna("0")
+steam2["Indie"]=steam2["Indie"].fillna("1.0")
+steam2
+
+#Eliminamos aquellos juegos que no tienen nombre ni costo
+
+steam2=steam2.dropna(subset=['Name','OriginalCost'])
+
+#reemplazamos los "nan" de "Player tag 1" y "Genero 1" teniendo en cuenta el Genero del juego para definir con que valor reemplazar (ya que gran mayoria de los juegos
+no tienen tag)
+
+steam2["Genero 1"]=steam2["Genero 1"].astype(str)
+steam2["Genero 2"]=steam2["Genero 2"].astype(str)
+steam2["Player tag 1"]=steam2["Player tag 1"].astype(str)
+steam2["Player tag 1"]=steam2["Player tag 2"].astype(str)
+
+steam2["Player tag 1"].value_counts()
+steam2["Genero 1"].value_counts()
+
+#Al ver que muchos juegos no tienen player tag ni genero definido, hacemos merge con otro DF para corregir esto.
+
+steamcategories=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Machine Learning/Steam ML - Prediccion Descuentos/mas datos - Steam/steam.csv")
+steamcategories=steamcategories.drop(["appid","english","developer","publisher","platforms","required_age","steamspy_tags","achievements","average_playtime","owners","price"], axis=1)
+steamcategories=steamcategories.rename(columns={"name": "Name"})
+steamcategories
+
+steam_merge=steam2.merge(steamcategories, on="Name")
+steam_merge
+
+#Volvemos a separar el texto de las variables nuevamente para poder reemplazarlas en la columna original
+
+steam_merge["Player tag 1"]=steam_merge["categories"].astype(str).str.split(';').str[0]
+steam_merge["Player tag 1"]=steam_merge["Player tag 1"].astype(str)
+steam_merge["categories"].value_counts()
+steam_merge["Player tag 2"].value_counts()
+steam_merge=steam_merge.drop(["Player tag 2","categories"], axis=1)
+steam_merge
+
+steam_merge.loc[steam_merge["ReleaseDate"].isna()]
+steam_merge["ReleaseDate"]=np.where(steam_merge["ReleaseDate"].isna(),steam_merge["release_date"],steam_merge["ReleaseDate"])
+steam_merge=steam_merge.drop("release_date", axis=1)
+steam_merge["ReleaseDate"].isna()
+
+steam_merge["genres1"]=steam_merge["genres"].astype(str).str.split(';').str[0]
+steam_merge["genres2"]=steam_merge["genres"].astype(str).str.split(';').str[1]
+steam_merge["Genero 1"]=np.where(steam_merge["Genero 1"]=="nan",steam_merge["genres1"],steam_merge["Genero 1"])
+steam_merge
+
+steam_merge["Genero 1"].value_counts()
+steam_merge["Genero 2"]=np.where(steam_merge["Genero 2"]=="Not Defined",steam_merge["genres2"],steam_merge["Genero 2"])
+steam_merge
+
+steam_merge["Genero 2"].value_counts()
+steam_merge["Genero 2"]=steam_merge["Genero 2"].fillna("Not Defined")
+steam_merge.isna().sum()
+
+#CREAMOS LOS DUMMIES
+
+#indie
+
+steam3=steam_merge
+steam3["Indie"].value_counts()
+
+steam3["Indie"]=np.where(steam3["Indie"]=="1.0",1.0,steam3["Indie"])
+steam3["Indie"].value_counts()
+
+steam_dummies_indie = pd.get_dummies(steam3['Indie'])
+steam_dummies_indie.columns=["not indie","indie"]
+steam_dummies_indie
+
+steam_final = pd.concat([steam3, steam_dummies_indie], axis=1)
+steam_final = steam_final.drop(["Indie","genres"], axis=1)
+steam_final
+
+#controller support
+
+steam3["Controller"].value_counts()
+steam3["Controller"]=np.where(steam3["Controller"]=="0",0.0,steam3["Controller"])
+steam3["Controller"].value_counts()
+steam_dummies_controller = pd.get_dummies(steam3['Controller'])
+steam_dummies_controller.columns=["no controller","controller"]
+steam_dummies_controller
+steam_final = pd.concat([steam_final, steam_dummies_controller], axis=1)
+steam_final = steam_final.drop("Controller", axis=1)
+
+#Genero 1
+
+steam3["Genero 1"].value_counts()
+steam_dummies_genero1 = pd.get_dummies(steam3['Genero 1'])
+steam_dummies_genero1
+
+steam_final = pd.concat([steam_final, steam_dummies_genero1], axis=1)
+steam_final = steam_final.drop(["Genero 1","Genero 2","genres1","genres2"], axis=1)
+
+#Player tag 1
+
+steam_dummies_playertag = pd.get_dummies(steam3['Player tag 1'])
+steam_dummies_playertag
+
+steam_final = pd.concat([steam_final, steam_dummies_playertag], axis=1)
+steam_final = steam_final.drop(["Player tag 1"], axis=1)
+
+#Release Date
+
+from datetime import datetime
+steam_final
+
+steam_final["ReleaseDate"]=steam_final["ReleaseDate"].astype(str)
+print(steam_final.ReleaseDate)
+
+steam_final["ReleaseDate"]=pd.to_datetime(steam_final.ReleaseDate, format='%Y-%m-%d')
+steam_final
+
+steam_final["release_date"]=np.where(steam_final["ReleaseDate"]>="2015-01-01","Nuevo","Viejo")
+steam_final["release_date"]=np.where(steam_final["ReleaseDate"]<"2015-01-01","Clasico",steam_final["release_date"])
+steam_final["release_date"]=np.where(steam_final["ReleaseDate"]<"2010-01-01","Antiguo",steam_final["release_date"])
+steam_final
+
+steam_final.release_date.value_counts()
+steam_dummies_releasedate = pd.get_dummies(steam_final['release_date'])
+steam_dummies_releasedate
+
+steam_final = pd.concat([steam_final, steam_dummies_releasedate], axis=1)
+steam_final = steam_final.drop(["release_date","ReleaseDate"], axis=1)
+steam_final
+
+#MODELO
+
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+parameter_grid_rf = {
+    'max_depth': [10,20,30, None],
+    'max_features': [0.3, 0.5, 1.],
+    'n_estimators': [100, 500, 1000]
+}
+
+parameter_grid_dt = {
+    'max_depth': [10,20,30, None],
+    'min_samples_split': [2, 3, 5]
+}
+
+parameter_grid_linReg = {
+    'fit_intercept': [True, False]
+}
+
+
+grid_search_rf = GridSearchCV(RandomForestRegressor(), parameter_grid_rf,
+                            cv=3, verbose=3, refit=True, n_jobs=-1, scoring = "neg_mean_squared_error")
+
+grid_search_dt = GridSearchCV(DecisionTreeRegressor(), parameter_grid_dt,
+                            cv=3, verbose=3, refit=True, n_jobs=-1, scoring = "neg_mean_squared_error")
+
+grid_search_linReg = GridSearchCV(LinearRegression(), parameter_grid_linReg,
+                            cv=3, verbose=3, refit=True, n_jobs=-1, scoring = "neg_mean_squared_error")
+
+
+X = steam_final.drop(['Name',"OriginalCost","Average Votes","Recommended Votes","Exceptional Votes","Skip Votes","positive_ratings","negative_ratings","median_playtime"], axis=1)
+y = steam_final['OriginalCost']
+
+#RANDOM FOREST
+
+grid_search_rf.fit(X, y)
+grid_search_rf.best_estimator_
+grid_search_rf.best_params_
+grid_search_rf.best_score_
+print('El RMSE es $ {}'.format(np.sqrt(-grid_search_rf.best_score_).round(2)))
+
+#DECISION TREE
+
+grid_search_dt.fit(X, y)
+grid_search_dt.best_estimator_
+grid_search_dt.best_params_
+grid_search_dt.best_score_
+print('El RMSE es $ {}'.format(np.sqrt(-grid_search_dt.best_score_).round(2)))
+
+#Utilizamos Random Forest ya que el CV nos dio el mejor score
+
+from sklearn.model_selection import train_test_split
+x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=15)
+print(x_train.shape[0], x_test.shape[0])
+
+rfmod= RandomForestRegressor(max_depth=10, max_features=0.3, n_estimators=500)
+rfmod.fit(x_train,y_train)
+
+#Vemos cuales son las variables mas importantes
+
+importances = rfmod.feature_importances_
+importances
+
+indices = np.argsort(importances)[::-1]
+indices
+
+var_importance = pd.DataFrame({'variable' : list(X.columns),
+                       'importancia' : list(importances)})
+var_importance
+
+df_10best= var_importance.iloc[indices[:10],:]
+df_10best
+
+
+
