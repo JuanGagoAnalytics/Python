@@ -1,0 +1,103 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+
+appstore=pd.read_csv("/content/drive/My Drive/Colab Notebooks/Machine Learning/App Store/Google-Playstore.csv")
+
+appstore=appstore.drop(["App Id","Installs","Minimum Installs","Released","Minimum Android","Currency","Free","Size","Developer Id","Developer Website","Developer Email","Last Updated","Privacy Policy","Editors Choice"], axis=1)
+appstore=appstore.set_index("App Name")
+appstore=appstore.rename(columns={'Rating Count': 'Number of Ratings'})
+
+catdummies=pd.get_dummies(appstore['Category'])
+appstore=pd.concat([appstore, catdummies], axis=1)
+appstore=appstore.drop("Category", axis=1)
+
+appstore=appstore.dropna(subset=["Rating"])
+appstore.Rating.isna().value_counts()
+appstore.Rating.unique()
+
+boxplot1 = appstore.boxplot(column="Number of Ratings",grid=False, fontsize=15)
+boxplot1
+
+Q1, Q3 = np.percentile(appstore["Number of Ratings"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((appstore['Number of Ratings'] > whis_sup).sum())
+print((appstore['Number of Ratings'] > whis_sup).sum()/appstore.shape[0])
+print((appstore['Number of Ratings'] < whis_inf).sum())
+print((appstore['Number of Ratings'] < whis_inf).sum()/appstore.shape[0])
+
+appstore=appstore.loc[appstore["Number of Ratings"]<=640]
+
+boxplot2 = appstore.boxplot(column="Maximum Installs",grid=False, fontsize=15)
+boxplot2
+
+Q1, Q3 = np.percentile(appstore["Maximum Installs"], [25, 75])
+distancia = 1.5 * (Q3 - Q1) 
+print (Q1,Q3,distancia)
+
+whis_inf = Q1-distancia 
+whis_sup = Q3+distancia
+print(whis_inf,whis_sup)
+
+print((appstore['Maximum Installs'] > whis_sup).sum())
+print((appstore['Maximum Installs'] > whis_sup).sum()/appstore.shape[0])
+print((appstore['Maximum Installs'] < whis_inf).sum())
+print((appstore['Maximum Installs'] < whis_inf).sum()/appstore.shape[0])
+
+appstore=appstore.loc[appstore["Maximum Installs"]<=34671]
+
+appstore["Content Rating"].unique()
+contdummies=pd.get_dummies(appstore['Content Rating'])
+appstore=pd.concat([appstore, contdummies], axis=1)
+appstore=appstore.drop("Content Rating", axis=1)
+
+appstore["Ad Supported"].unique()
+addummies=pd.get_dummies(appstore['Ad Supported'])
+addummies=addummies.rename(columns={False: 'No Ads',
+                                   True: "Has Ads"})
+addummies
+
+appstore=pd.concat([appstore, addummies], axis=1)
+appstore=appstore.drop("Ad Supported", axis=1)
+
+appstore["In App Purchases"].unique()
+purummies=pd.get_dummies(appstore['In App Purchases'])
+purummies=purummies.rename(columns={False: 'No In App Purchases',
+                                   True: "Has In App Purchases"})
+                                   
+appstore=pd.concat([appstore, purummies], axis=1)
+appstore=appstore.drop("In App Purchases", axis=1)
+
+#Normalizamos variables
+appcluster=(appstore-appstore.min())/(appstore.max()-appstore.min())
+
+#Cantidad optima de clusters
+
+#wcss= []
+
+#for i in range(1,11):
+#  kmeans=KMeans(n_clusters=i, max_iter=300)
+#  kmeans.fit(appcluster)
+#  wcss.append(kmeans.inertia_)
+
+plt.plot(range(1,11),wcss)
+plt.show()
+
+cluster=KMeans(n_clusters=2, max_iter=300)
+cluster.fit(appcluster)
+
+appstore["Cluster"]=cluster.labels_
+appstore
+
+appfinal=appstore.groupby(['Cluster']).mean()
+
+appfinal=appfinal[["Rating","Maximum Installs","Price","Has Ads","Has In App Purchases"]]
+appfinal
